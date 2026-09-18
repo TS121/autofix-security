@@ -1,0 +1,23 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Testing & Virtual Environments
+.pytest_cache/
+.coverage
+htmlcov/
+env/
+venv/
+ENV/
+
+# AWS SAM build artifacts & temporary files
+.aws-sam/
+response.json
+src.zip
+*.log
+
+# OS generated files
+.DS_Store

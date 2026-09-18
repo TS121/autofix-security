@@ -1,0 +1,210 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  Autonomous Cloud Security Remediation System.
+  Event-driven serverless architecture that automatically detects and
+  remediates cloud security misconfigurations across S3, EC2, and IAM
+  using AWS Security Hub findings and EC2 launch event monitoring.
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Description: Email address for remediation alert notifications
+
+  LambdaTimeout:
+    Type: Number
+    Default: 60
+    Description: Lambda function timeout in seconds
+
+  LambdaMemory:
+    Type: Number
+    Default: 256
+    Description: Lambda function memory in MB
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: !Ref LambdaTimeout
+    MemorySize: !Ref LambdaMemory
+
+Resources:
+  RemediationNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: autofix-remediation-alerts
+      DisplayName: Auto-Fix Remediation Alerts
+
+  RemediationEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref RemediationNotificationTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  RemediationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: autofix-security-remediation
+      Description: >
+        Autonomous security remediation agent. Triggered by Security Hub
+        findings and EC2 launch events.
+      CodeUri: src/
+      Handler: lambda_function.lambda_handler
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref RemediationNotificationTopic
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: EC2SecurityGroupRemediation
+              Effect: Allow
+              Action:
+                - ec2:DescribeSecurityGroups
+                - ec2:RevokeSecurityGroupIngress
+              Resource: "*"
+            - Sid: EC2InstanceInspection
+              Effect: Allow
+              Action:
+                - ec2:DescribeInstances
+              Resource: "*"
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: S3BucketRemediation
+              Effect: Allow
+              Action:
+                - s3:GetBucketTagging
+                - s3:GetBucketPublicAccessBlock
+                - s3:PutBucketPublicAccessBlock
+                - s3:GetBucketPolicy
+                - s3:PutBucketPolicy
+                - s3:DeleteBucketPolicy
+
+              Resource: "*"
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: IAMRoleRemediation
+              Effect: Allow
+              Action:
+                - iam:ListRoleTags
+                - iam:ListRolePolicies
+                - iam:DeleteRolePolicy
+              Resource: "*"
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt RemediationNotificationTopic.TopicName
+        - CloudWatchPutMetricPolicy: {}
+      Events:
+        SecurityHubFinding:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              source:
+                - aws.securityhub
+              detail-type:
+                - Security Hub Findings - Imported
+              detail:
+                findings:
+                  Severity:
+                    Label:
+                      - LOW
+                      - MEDIUM
+                      - HIGH
+                      - CRITICAL
+            RuleName: autofix-securityhub-findings
+        EC2LaunchEvent:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              source:
+                - aws.ec2
+              detail-type:
+                - EC2 Instance State-change Notification
+              detail:
+                state:
+                  - running
+            RuleName: autofix-ec2-launch-validation
+
+  RemediationDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: AutoFix-Security-Dashboard
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Remediations by Service",
+                "metrics": [
+                  ["AutoFixSecurity", "FixCount", "Service", "S3", "Action", "remediated"],
+                  ["AutoFixSecurity", "FixCount", "Service", "EC2", "Action", "remediated"],
+                  ["AutoFixSecurity", "FixCount", "Service", "IAM", "Action", "remediated"]
+                ],
+                "period": 86400,
+                "region": "${AWS::Region}",
+                "view": "bar"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Errors by Service",
+                "metrics": [
+                  ["AutoFixSecurity", "FixCount", "Service", "S3", "Action", "error"],
+                  ["AutoFixSecurity", "FixCount", "Service", "EC2", "Action", "error"],
+                  ["AutoFixSecurity", "FixCount", "Service", "IAM", "Action", "error"]
+                ],
+                "period": 86400,
+                "region": "${AWS::Region}",
+                "view": "bar"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "Lambda Invocations and Errors",
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "autofix-security-remediation"],
+                  ["AWS/Lambda", "Errors", "FunctionName", "autofix-security-remediation"],
+                  ["AWS/Lambda", "Duration", "FunctionName", "autofix-security-remediation"]
+                ],
+                "period": 86400,
+                "region": "${AWS::Region}",
+                "view": "timeSeries"
+              }
+            }
+          ]
+        }
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: autofix-lambda-error-alarm
+      AlarmDescription: Triggers when the remediation Lambda encounters errors.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RemediationFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref RemediationNotificationTopic
+
+Outputs:
+  RemediationFunctionArn:
+    Description: ARN of the remediation Lambda function
+    Value: !GetAtt RemediationFunction.Arn
+  SNSTopicArn:
+    Description: ARN of the SNS notification topic
+    Value: !Ref RemediationNotificationTopic
+  DashboardURL:
+    Description: URL for the CloudWatch monitoring dashboard
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=AutoFix-Security-Dashboard"

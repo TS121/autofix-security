@@ -1,0 +1,12 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "autofix-security-stack"
+resolve_s3 = true
+s3_prefix = "autofix-security-stack"
+region = "eu-west-2"
+profile = "stephane"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "NotificationEmail=\"olatunde.oloyede22@my.northampton.ac.uk\" LambdaTimeout=\"60\" LambdaMemory=\"256\""
+image_repositories = []
