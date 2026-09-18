@@ -56,7 +56,7 @@ This project eliminates that response gap by deploying an autonomous remediation
         [ Amazon CloudWatch ]           [ Amazon SNS ]
      • Custom Metrics Namespace       • Email Summaries
      • Operational Dashboard          (Only on Remediation)
-
+```
 ### Event Path 1: Reactive Security Hub Findings
 1. Security Hub scans resources against CIS Benchmarks and AWS Foundational Security Best Practices.
 2. EventBridge filters relevant findings and triggers the orchestrator Lambda function (`lambda_function.py`).
