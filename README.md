@@ -18,44 +18,44 @@ This project eliminates that response gap by deploying an autonomous remediation
 
 ## Key System Architecture & Dual Event Paths
 
-[ AWS Security Hub ]                   [ EC2 Auto Scaling ]
-(Security Finding)                     (Instance Running)
-│                                       │
-└───────────────┐       ┌───────────────┘
-▼       ▼
-[ Amazon EventBridge ]
-│
-▼
-[ AWS Lambda Function ]
-(Main Orchestrator)
-│
-┌─────────────┴─────────────┐
-▼                           ▼
-(Path 1: Security Hub)     (Path 2: Auto Scaling Launch)
-│                           │
-[ Tag Safety Gate ]         [ Bypass Tag Gate ]
-(Check AutoFix=True)       (Immediate Inspection)
-│                           │
-└─────────────┬─────────────┘
-│
-┌────────────────────────┼────────────────────────┐
-▼                        ▼                        ▼
+```text
+  [ AWS Security Hub ]                   [ EC2 Auto Scaling ]
+     (Security Finding)                     (Instance Running)
+            │                                       │
+            └───────────────┐       ┌───────────────┘
+                            ▼       ▼
+                     [ Amazon EventBridge ]
+                                │
+                                ▼
+                      [ AWS Lambda Function ]
+                     (Main Orchestrator)
+                                │
+                  ┌─────────────┴─────────────┐
+                  ▼                           ▼
+          (Path 1: Security Hub)     (Path 2: Auto Scaling Launch)
+                  │                           │
+          [ Tag Safety Gate ]         [ Bypass Tag Gate ]
+          (Check AutoFix=True)       (Immediate Inspection)
+                  │                           │
+                  └─────────────┬─────────────┘
+                                │
+       ┌────────────────────────┼────────────────────────┐
+       ▼                        ▼                        ▼
 [ S3 Module ]             [ EC2 Module ]           [ IAM Module ]
 • Block Public Access     • Revoke Inbound         • Delete Inline
-Enforcement               SSH (0.0.0.0/0)          Policies
+  Enforcement               SSH (0.0.0.0/0)          Policies
 • Public Policy Cleanup
-│                        │                        │
-└────────────────────────┼────────────────────────┘
-│
-▼
-[ Heuristic Risk Scoring ]
-│
-┌─────────────┴─────────────┐
-▼                           ▼
-[ Amazon CloudWatch ]           [ Amazon SNS ]
-• Custom Metrics Namespace       • Email Summaries
-• Operational Dashboard          (Only on Remediation)
-
+       │                        │                        │
+       └────────────────────────┼────────────────────────┘
+                                │
+                                ▼
+                   [ Heuristic Risk Scoring ]
+                                │
+                  ┌─────────────┴─────────────┐
+                  ▼                           ▼
+        [ Amazon CloudWatch ]           [ Amazon SNS ]
+     • Custom Metrics Namespace       • Email Summaries
+     • Operational Dashboard          (Only on Remediation)
 
 ### Event Path 1: Reactive Security Hub Findings
 1. Security Hub scans resources against CIS Benchmarks and AWS Foundational Security Best Practices.
